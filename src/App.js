@@ -1,72 +1,112 @@
-import React, { Component } from 'react';
-import firebase from 'firebase'
-import './App.css';
+import React, { Component } from "react";
+import { Layout, Input, Button, List, Icon } from "antd";
+import firestore from "./firestore";
+import "./App.css";
+
+const { Header, Footer, Content } = Layout;
 
 class App extends Component {
+  constructor(props) {
+    super(props);
+    
+    this.state = { 
+      addingTodo: false, 
+      pendingTodo: "", 
+      todos: [] 
+    };
 
-  constructor () {
-    super()
-    this.state = {
-      user:null
-    }
+    this.addTodo = this.addTodo.bind(this);
 
-//    this.app = firebase.initializeApp(DB_CONFIG);
-//    this.database = this.app.database().ref().child('notes');
+    this.completeTodo = this.completeTodo.bind(this);
 
-    this.handleAuth = this.handleAuth.bind(this)
-    this.handleLogout = this.handleLogout.bind(this)
+    firestore.collection("todos").onSnapshot(snapshot => {
+      let todos = [];
+      snapshot.forEach(doc => {
+        const todo = doc.data();
+        todo.id = doc.id;
+        if (!todo.completed) todos.push(todo);
+      });
+      todos.sort(function(a, b) {
+        return (
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+      });
+      this.setState({ todos });
+    });
   }
 
-  componentWillMount () {
-    firebase.auth().onAuthStateChanged(user => {
-      this.setState({user})
-    })
+  async completeTodo(id) {
+    await firestore
+      .collection("todos")
+      .doc(id)
+      .set({
+        completed: true
+      });
   }
 
-  handleAuth() {
-    const provider = new firebase.auth.GoogleAuthProvider()
+  async addTodo() {
+    if (!this.state.pendingTodo) return;
+    
+    this.setState({ 
+      addingTodo: true 
+    });
 
-    firebase.auth().signInWithPopup(provider)
-      .then(function(result) {
-        console.log(result.user)
-        firebase.database().ref('users')
-          .push({
-            uid: result.user.uid,
-            name: result.user.displayName,
-            email: result.user.email,
-            photo: result.user.photoURL
-          })
-      })
-      .catch(error => console.log(`Error ${error.code}: ${error.message}`))
-  }
-
-  handleLogout () {
-    firebase.auth().signOut()
-      .then(result => console.log('out'))
-      .catch(error => console.log(`Error ${error.code}: ${error.message}`))
-  }
-
-  renderLoginButton(){
-    if (this.state.user) {
-      return (
-        <div>
-          <p>Hola {this.state.user.displayName}</p> 
-          <img src={this.state.user.photoURL} alt={this.state.user.displayName}/>
-          <button onClick={this.handleLogout}>Salir</button>
-        </div>
-      )
-    } else {
-      return (
-        <button onClick={this.handleAuth}>Login</button>
-      )
-    }
+    await firestore.collection("todos").add({
+      content: this.state.pendingTodo,
+      completed: false,
+      createdAt: new Date().toISOString()
+    });
+    
+    this.setState({ 
+      addingTodo: false, 
+      pendingTodo: "" 
+    });
   }
 
   render() {
     return (
-      <div className="App">
-        { this.renderLoginButton() }
-      </div>
+      <Layout className="App">
+        <Header className="App-header">
+          <h1>Listado por hacer</h1>
+        </Header>
+        <Content className="App-content">
+          <Input
+            className="App-add-todo-input"
+            size="large"
+            disabled={this.state.addingTodo}
+            onChange={evt => this.setState({ pendingTodo: evt.target.value })}
+            value={this.state.pendingTodo}
+            onPressEnter={this.addTodo}
+            required
+          />
+          <Button
+            className="App-add-todo-button"
+            size="large"
+            type="primary"
+            onClick={this.addTodo}
+            loading={this.state.addingTodo}
+          >
+            Agregar a lista
+          </Button>
+          <List
+            className="App-todos"
+            size="large"
+            bordered
+            dataSource={this.state.todos}
+            renderItem={todo => (
+              <List.Item>
+                {todo.content}
+                <Icon
+                  onClick={evt => this.completeTodo(todo.id)}
+                  className="App-todo-complete"
+                  type="check"
+                />
+              </List.Item>
+            )}
+          />
+        </Content>
+        <Footer className="App-footer">Footer</Footer>
+      </Layout>
     );
   }
 }
